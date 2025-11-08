@@ -1,13 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/diet_nutrition_screen.dart';
 import 'screens/community_screen.dart';
 import 'screens/smart_pantry_screen.dart';
 import 'screens/user_profile_screen.dart';
+import 'providers/chat_provider.dart';
+import 'services/user_data_service.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Load environment variables (optional - won't fail if file doesn't exist)
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    // .env file is optional - app will work but API calls will fail without key
+    debugPrint('Info: .env file not found. Please create .env with GEMINI_API_KEY for AI features.');
+  }
+  
   runApp(const MyApp());
 }
 
@@ -16,13 +30,19 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Alfredo - AI Nutrition Assistant',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.light,
-      home: const MainNavigation(),
+    return MultiProvider(
+      providers: [
+        Provider<UserDataService>(create: (_) => UserDataService()),
+        ChangeNotifierProvider<ChatProvider>(create: (_) => ChatProvider()..initializeVoice()),
+      ],
+      child: MaterialApp(
+        title: 'Alfredo - AI Nutrition Assistant',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.light,
+        home: const MainNavigation(),
+      ),
     );
   }
 }
