@@ -14,38 +14,66 @@ class CameraService {
   CameraController? get controller => _controller;
 
   Future<bool> initialize() async {
-    if (_isInitialized) return true;
+    if (_isInitialized) {
+      print('✅ [CAMERA] Already initialized');
+      return true;
+    }
 
     // Request camera permission
+    print('📷 [CAMERA] Requesting camera permission...');
     final status = await Permission.camera.request();
     if (!status.isGranted) {
+      print('❌ [CAMERA] Camera permission denied');
       return false;
     }
 
     try {
+      print('📷 [CAMERA] Getting available cameras...');
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
+        print('❌ [CAMERA] No cameras available');
         return false;
       }
 
+      print('📷 [CAMERA] Creating camera controller...');
       _controller = CameraController(
         cameras.first,
-        ResolutionPreset.medium,
+        ResolutionPreset.high, // Changed from medium to high for better quality
         enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
+      print('📷 [CAMERA] Initializing camera controller...');
       await _controller!.initialize();
-      _isInitialized = true;
       
       // Verify controller is actually initialized
       if (_controller != null && _controller!.value.isInitialized) {
+        _isInitialized = true;
+        print('✅ [CAMERA] Camera initialized successfully');
+        
+        // Set focus mode to auto for better image quality
+        try {
+          await _controller!.setFocusMode(FocusMode.auto);
+          await _controller!.setExposureMode(ExposureMode.auto);
+          print('✅ [CAMERA] Focus and exposure modes set');
+        } catch (e) {
+          // Focus modes might not be supported on all devices
+          print('⚠️ [CAMERA] Could not set focus mode: $e');
+        }
         return true;
       } else {
+        print('❌ [CAMERA] Controller not properly initialized');
         _isInitialized = false;
+        await _controller?.dispose();
+        _controller = null;
         return false;
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ [CAMERA] Error initializing camera: $e');
+      print('❌ [CAMERA] Stack trace: $stackTrace');
       _isInitialized = false;
+      await _controller?.dispose();
+      _controller = null;
       return false;
     }
   }
@@ -78,9 +106,22 @@ class CameraService {
     if (!_controller!.value.isInitialized) return null;
 
     try {
+      // Try to lock focus before capturing for better image quality
+      try {
+        await _controller!.setFocusMode(FocusMode.locked);
+        // Wait a bit for focus to lock
+        await Future.delayed(const Duration(milliseconds: 200));
+      } catch (e) {
+        // Focus lock might fail or not be supported, continue anyway
+        print('⚠️ [CAMERA] Focus lock not supported or failed: $e');
+      }
+      
       final image = await _controller!.takePicture();
+      print('📸 [CAMERA] Frame captured: ${image.path}');
       return image.path;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ [CAMERA] Error capturing frame: $e');
+      print('❌ [CAMERA] Stack trace: $stackTrace');
       return null;
     }
   }

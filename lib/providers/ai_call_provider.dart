@@ -27,12 +27,20 @@ class AiCallProvider extends ChangeNotifier {
   CameraService get cameraService => _cameraService;
 
   AiCallProvider() {
-    _initializeServices();
+    // Don't initialize camera in constructor - let the screen handle it
+    _initializeMlKit();
   }
 
-  Future<void> _initializeServices() async {
-    final cameraInitialized = await _cameraService.initialize();
+  Future<void> _initializeMlKit() async {
     await _mlKitService.initialize();
+  }
+
+  Future<bool> initializeCamera() async {
+    if (_cameraService.isInitialized) {
+      return true;
+    }
+    
+    final cameraInitialized = await _cameraService.initialize();
     
     // Notify listeners when camera is ready
     if (cameraInitialized) {
@@ -40,21 +48,37 @@ class AiCallProvider extends ChangeNotifier {
       await Future.delayed(const Duration(milliseconds: 100));
       notifyListeners();
     }
+    
+    return cameraInitialized;
   }
 
   /// Process user utterance
   Future<void> processUserUtterance(String utterance) async {
-    if (_isProcessing) return;
+    if (_isProcessing) {
+      print('⚠️ [PROVIDER] Already processing, ignoring utterance');
+      return;
+    }
 
+    print('🎤 [PROVIDER] Processing user utterance: "$utterance"');
     _isProcessing = true;
     notifyListeners();
 
     try {
-      // Get latest frame and ML Kit data if available
+      // Automatically capture a fresh frame when user speaks
+      if (_cameraService.isInitialized) {
+        print('📸 [PROVIDER] Capturing fresh frame for user utterance...');
+        await _captureAndProcessFrame(null);
+      }
+      
+      // Get latest frame and ML Kit data
       final framePath = _lastFramePath;
       final mlKitData = _lastMlKitData;
+      
+      print('📸 [PROVIDER] Frame path: ${framePath ?? "none"}');
+      print('🔍 [PROVIDER] ML Kit data: ${mlKitData != null ? "available" : "none"}');
 
       // Call AI service
+      print('🤖 [PROVIDER] Calling AI service...');
       final response = await _aiService.processUserInput(
         utterance: utterance,
         frameImagePath: framePath,
@@ -62,14 +86,21 @@ class AiCallProvider extends ChangeNotifier {
         currentState: _state,
       );
 
+      print('🤖 [PROVIDER] AI response received: ${response.text}');
+      print('🛠️ [PROVIDER] Tool calls: ${response.toolCalls?.length ?? 0}');
+
       // Update response text
       _alfredoResponse = response.text;
 
       // Execute tool calls if any
       if (response.toolCalls != null && response.toolCalls!.isNotEmpty) {
+        print('🔄 [PROVIDER] Executing ${response.toolCalls!.length} tool calls');
         for (final toolCall in response.toolCalls!) {
+          print('🔄 [PROVIDER] Processing tool call: ${toolCall.name}');
           await _executeToolCall(toolCall);
         }
+      } else {
+        print('ℹ️ [PROVIDER] No tool calls in response');
       }
 
       // Update state if provided
@@ -134,10 +165,42 @@ class AiCallProvider extends ChangeNotifier {
         // Pantry data is read and available to AI, no UI update needed
         break;
 
-      case 'update_pantry_item':
       case 'add_pantry_item':
+        print('📦 [PROVIDER] add_pantry_item result: $result');
+        if (result['success'] == true) {
+          _state = _state.copyWith(
+            notes: result['message'] as String? ?? 'Pantry item added',
+          );
+          print('✅ [PROVIDER] Pantry item added successfully');
+        } else {
+          print('❌ [PROVIDER] Failed to add pantry item: ${result['error']}');
+        }
+        notifyListeners();
+        break;
+
+      case 'update_pantry_item':
+        print('📦 [PROVIDER] update_pantry_item result: $result');
+        if (result['success'] == true) {
+          _state = _state.copyWith(
+            notes: result['message'] as String? ?? 'Pantry item updated',
+          );
+          print('✅ [PROVIDER] Pantry item updated successfully');
+        } else {
+          print('❌ [PROVIDER] Failed to update pantry item: ${result['error']}');
+        }
+        notifyListeners();
+        break;
+
       case 'remove_pantry_item':
-        // Pantry updated, notify listeners to refresh UI
+        print('📦 [PROVIDER] remove_pantry_item result: $result');
+        if (result['success'] == true) {
+          _state = _state.copyWith(
+            notes: result['message'] as String? ?? 'Pantry item removed',
+          );
+          print('✅ [PROVIDER] Pantry item removed successfully');
+        } else {
+          print('❌ [PROVIDER] Failed to remove pantry item: ${result['error']}');
+        }
         notifyListeners();
         break;
 
@@ -202,15 +265,32 @@ class AiCallProvider extends ChangeNotifier {
   }
 
   Future<void> _processFrame(String imagePath) async {
+    print('📸 [PROVIDER] Processing frame: $imagePath');
     _lastFramePath = imagePath;
 
     // Run ML Kit detection on the captured frame
     try {
+      print('🔍 [PROVIDER] Running ML Kit detection...');
       final mlKitResult = await _mlKitService.detectObjects(imagePath);
       _lastMlKitData = mlKitResult.toJson();
-    } catch (e) {
+      print('✅ [PROVIDER] ML Kit detection complete');
+      print('📦 [PROVIDER] Detected objects: ${mlKitResult.objects}');
+      print('⚠️ [PROVIDER] Detected hazards: ${mlKitResult.hazards}');
+      print('📝 [PROVIDER] Notes: ${mlKitResult.notes}');
+      
+      if (mlKitResult.objects.isEmpty && mlKitResult.hazards.isEmpty) {
+        print('⚠️ [PROVIDER] No objects detected - image might be blurry or ML Kit not working');
+      }
+    } catch (e, stackTrace) {
+      print('❌ [PROVIDER] ML Kit detection failed: $e');
+      print('❌ [PROVIDER] Stack trace: $stackTrace');
       // If ML Kit fails, still store the frame path for AI
-      _lastMlKitData = {'error': e.toString(), 'objects': [], 'hazards': []};
+      _lastMlKitData = {
+        'error': e.toString(),
+        'objects': [],
+        'hazards': [],
+        'notes': 'ML Kit detection failed: $e'
+      };
     }
 
     notifyListeners();
@@ -245,9 +325,16 @@ class AiCallProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _cameraService.dispose();
+    // Don't dispose camera service here - let it persist across navigation
+    // Only dispose when app is closing or provider is truly being disposed
+    // _cameraService.dispose();
     _mlKitService.dispose();
     super.dispose();
+  }
+  
+  // Method to dispose camera when needed (e.g., when app is closing)
+  void disposeCamera() {
+    _cameraService.dispose();
   }
 }
 

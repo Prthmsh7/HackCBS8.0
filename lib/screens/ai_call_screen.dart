@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import '../theme/app_theme.dart';
 import '../widgets/voice_button.dart';
-import '../widgets/neomorphic_container.dart';
 import '../providers/ai_call_provider.dart';
 import '../models/ai_call_state.dart';
 
@@ -21,6 +20,8 @@ class _AiCallScreenState extends State<AiCallScreen> {
   final FlutterTts _tts = FlutterTts();
   String _transcript = '';
 
+  bool _cameraListenerAdded = false;
+
   @override
   void initState() {
     super.initState();
@@ -30,27 +31,40 @@ class _AiCallScreenState extends State<AiCallScreen> {
   }
 
   Future<void> _initializeCamera() async {
+    if (!mounted) return;
+
     final provider = Provider.of<AiCallProvider>(context, listen: false);
-    // Auto-start camera when screen loads
+
+    // Initialize camera through provider
     if (!provider.cameraService.isInitialized) {
-      final initialized = await provider.cameraService.initialize();
+      print('📷 [SCREEN] Initializing camera...');
+      final initialized = await provider.initializeCamera();
       if (initialized && mounted) {
-        // Force UI rebuild to show camera preview
+        print('✅ [SCREEN] Camera initialized, setting up listener...');
+        _setupCameraListener(provider);
         if (mounted) {
           setState(() {});
         }
+      } else {
+        print('❌ [SCREEN] Camera initialization failed');
       }
-    } else if (provider.cameraService.isInitialized && mounted) {
-      // Camera already initialized, ensure UI is updated
+    } else {
+      // Camera already initialized, just setup listener
+      print('✅ [SCREEN] Camera already initialized, setting up listener...');
+      _setupCameraListener(provider);
       if (mounted) {
         setState(() {});
       }
     }
+  }
 
-    // Listen to camera controller changes
+  void _setupCameraListener(AiCallProvider provider) {
+    if (_cameraListenerAdded) return;
+
     final controller = provider.cameraService.controller;
     if (controller != null && mounted) {
       controller.addListener(_onCameraControllerChanged);
+      _cameraListenerAdded = true;
     }
   }
 
@@ -84,6 +98,10 @@ class _AiCallScreenState extends State<AiCallScreen> {
 
   void _startListening() async {
     final provider = Provider.of<AiCallProvider>(context, listen: false);
+
+    // Stop TTS immediately when user starts speaking
+    await _tts.stop();
+    print('🔇 [TTS] Stopped TTS for user speech');
 
     if (!provider.isListening) {
       bool available = await _speech.initialize();
@@ -131,6 +149,7 @@ class _AiCallScreenState extends State<AiCallScreen> {
       appBar: AppBar(
         title: const Text('AI Call'),
         elevation: 0,
+        backgroundColor: Colors.black,
         actions: [
           Consumer<AiCallProvider>(
             builder: (context, provider, _) {
@@ -176,103 +195,152 @@ class _AiCallScreenState extends State<AiCallScreen> {
       ),
       body: Consumer<AiCallProvider>(
         builder: (context, provider, _) {
-          return SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Camera Preview - Always show, will show placeholder if not initialized
-                  _buildCameraPreview(provider),
+          // Setup camera listener if not already done
+          if (!_cameraListenerAdded) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _setupCameraListener(provider);
+              }
+            });
+          }
 
-                  const SizedBox(height: 20),
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // Full screen camera preview - Positioned.fill ensures bounded constraints
+              Positioned.fill(child: _buildFullScreenCamera(provider)),
 
-                  // Current Recipe Info
-                  if (provider.state.recipe != null)
-                    _buildRecipeInfo(provider.state),
+              // Overlay content
+              SafeArea(
+                child: Column(
+                  children: [
+                    const Spacer(),
+                    // Bottom overlay with controls and info
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.7),
+                          ],
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Status info
+                          if (provider.state.recipe != null ||
+                              provider.state.timers.isNotEmpty ||
+                              provider.alfredoResponse.isNotEmpty)
+                            Container(
+                              margin: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (provider.state.recipe != null)
+                                    _buildRecipeInfo(provider.state),
+                                  if (provider.state.timers.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    _buildTimers(provider.state.timers),
+                                  ],
+                                  if (provider.alfredoResponse.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    _buildResponse(
+                                      provider.alfredoResponse,
+                                      provider.isProcessing,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
 
-                  const SizedBox(height: 20),
+                          // Transcript
+                          if (_transcript.isNotEmpty) _buildTranscript(),
 
-                  // Active Timers
-                  if (provider.state.timers.isNotEmpty)
-                    _buildTimers(provider.state.timers),
+                          // Status Notes
+                          if (provider.state.notes.isNotEmpty)
+                            _buildStatusNotes(provider.state.notes),
 
-                  const SizedBox(height: 20),
+                          // Voice interface
+                          _buildVoiceInterface(provider),
 
-                  // Voice Interface
-                  _buildVoiceInterface(provider),
-
-                  const SizedBox(height: 20),
-
-                  // Transcript
-                  if (_transcript.isNotEmpty) _buildTranscript(),
-
-                  const SizedBox(height: 20),
-
-                  // Alfredo Response
-                  if (provider.alfredoResponse.isNotEmpty)
-                    _buildResponse(
-                      provider.alfredoResponse,
-                      provider.isProcessing,
+                          const SizedBox(height: 20),
+                        ],
+                      ),
                     ),
-
-                  const SizedBox(height: 20),
-
-                  // Status Notes
-                  if (provider.state.notes.isNotEmpty)
-                    _buildStatusNotes(provider.state.notes),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _buildCameraPreview(AiCallProvider provider) {
+  Widget _buildFullScreenCamera(AiCallProvider provider) {
     final controller = provider.cameraService.controller;
 
     // Check if camera is initialized
     if (!provider.cameraService.isInitialized || controller == null) {
-      return _buildCameraPlaceholder();
+      return Container(
+        color: Colors.black,
+        child: Center(child: _buildCameraPlaceholder()),
+      );
     }
 
     // Use ValueListenableBuilder to react to controller state changes
     return ValueListenableBuilder<CameraValue>(
       valueListenable: controller,
       builder: (context, value, child) {
-        // Show placeholder while initializing
-        if (!value.isInitialized) {
-          return _buildCameraPlaceholder();
+        // Show placeholder while initializing or if error
+        if (!value.isInitialized || value.hasError) {
+          return Container(
+            color: Colors.black,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (value.hasError)
+                    Text(
+                      'Camera Error: ${value.errorDescription}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    )
+                  else
+                    _buildCameraPlaceholder(),
+                ],
+              ),
+            ),
+          );
         }
 
-        // Show camera preview when initialized
-        return NeomorphicContainer(
-          padding: EdgeInsets.zero,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: SizedBox(
-              height: 200,
-              width: double.infinity,
-              child: CameraPreview(controller),
-            ),
-          ),
-        );
+        // Show full screen camera preview when initialized
+        // CameraPreview will fill the available space from Positioned.fill
+        return CameraPreview(controller);
       },
     );
   }
 
   Widget _buildCameraPlaceholder() {
-    return NeomorphicContainer(
-      padding: const EdgeInsets.all(40),
+    return Center(
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.videocam_off_rounded, size: 48, color: AppTheme.gray600),
-          const SizedBox(height: 12),
-          Text(
+          Icon(Icons.videocam_off_rounded, size: 64, color: Colors.white54),
+          const SizedBox(height: 16),
+          const Text(
             'Camera not available',
-            style: TextStyle(color: AppTheme.gray600, fontSize: 14),
+            style: TextStyle(color: Colors.white70, fontSize: 16),
           ),
         ],
       ),
@@ -282,62 +350,64 @@ class _AiCallScreenState extends State<AiCallScreen> {
   Widget _buildRecipeInfo(AiCallState state) {
     if (state.recipe == null) return const SizedBox.shrink();
 
-    return NeomorphicContainer(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.restaurant_menu_rounded,
-                color: AppTheme.primaryOrange,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  state.recipe!.title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.restaurant_menu_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                state.recipe!.title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Servings: ${state.recipe!.servings}',
-            style: TextStyle(color: AppTheme.gray600, fontSize: 14),
-          ),
-          if (state.totalSteps > 0)
-            Text(
-              'Step ${state.stepIndex + 1} of ${state.totalSteps}',
-              style: TextStyle(color: AppTheme.gray600, fontSize: 14),
             ),
-        ],
-      ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Servings: ${state.recipe!.servings}',
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+        if (state.totalSteps > 0)
+          Text(
+            'Step ${state.stepIndex + 1} of ${state.totalSteps}',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+      ],
     );
   }
 
   Widget _buildTimers(List<TimerInfo> timers) {
-    return NeomorphicContainer(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.timer_rounded, color: AppTheme.primaryOrange),
-              const SizedBox(width: 8),
-              const Text(
-                'Active Timers',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.timer_rounded, color: Colors.white, size: 20),
+            SizedBox(width: 8),
+            Text(
+              'Active Timers',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ...timers.map((timer) => _buildTimerItem(timer)),
-        ],
-      ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...timers.map((timer) => _buildTimerItem(timer)),
+      ],
     );
   }
 
@@ -347,13 +417,17 @@ class _AiCallScreenState extends State<AiCallScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Text(timer.label, style: const TextStyle(fontSize: 14)),
+            child: Text(
+              timer.label,
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
           ),
           Text(
             _formatTimer(timer.seconds),
-            style: TextStyle(
-              color: AppTheme.primaryOrange,
+            style: const TextStyle(
+              color: Colors.white,
               fontWeight: FontWeight.w600,
+              fontSize: 12,
             ),
           ),
         ],
@@ -376,37 +450,50 @@ class _AiCallScreenState extends State<AiCallScreen> {
           size: 100,
         ),
         const SizedBox(height: 16),
-        Text(
-          provider.isListening
-              ? 'Listening...'
-              : provider.isProcessing
-              ? 'Processing...'
-              : 'Tap to talk to Alfredo',
-          style: Theme.of(context).textTheme.titleMedium,
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            provider.isListening
+                ? 'Listening...'
+                : provider.isProcessing
+                ? 'Processing...'
+                : 'Tap to talk to Alfredo',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ],
     );
   }
 
   Widget _buildTranscript() {
-    return NeomorphicContainer(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(Icons.mic_rounded, color: AppTheme.primaryOrange, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'You said:',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          Icon(Icons.mic_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _transcript,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _transcript,
-            style: TextStyle(color: AppTheme.gray700, fontSize: 14),
+            ),
           ),
         ],
       ),
@@ -414,7 +501,12 @@ class _AiCallScreenState extends State<AiCallScreen> {
   }
 
   Widget _buildResponse(String response, bool isProcessing) {
-    return NeomorphicContainer(
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -423,26 +515,36 @@ class _AiCallScreenState extends State<AiCallScreen> {
               Icon(
                 Icons.smart_toy_rounded,
                 color: AppTheme.primaryOrange,
-                size: 20,
+                size: 18,
               ),
               const SizedBox(width: 8),
               const Text(
                 'Alfredo:',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
           if (isProcessing)
-            const CircularProgressIndicator()
+            const SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
           else
             Text(
               response,
-              style: TextStyle(
-                color: AppTheme.gray700,
-                fontSize: 14,
-                height: 1.5,
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 12,
+                height: 1.4,
               ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
             ),
         ],
       ),
@@ -450,15 +552,21 @@ class _AiCallScreenState extends State<AiCallScreen> {
   }
 
   Widget _buildStatusNotes(String notes) {
-    return NeomorphicContainer(
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Row(
         children: [
-          Icon(Icons.info_outline_rounded, color: AppTheme.gray600, size: 20),
+          Icon(Icons.info_outline_rounded, color: Colors.white70, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               notes,
-              style: TextStyle(color: AppTheme.gray600, fontSize: 12),
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
             ),
           ),
         ],
@@ -470,6 +578,15 @@ class _AiCallScreenState extends State<AiCallScreen> {
   void dispose() {
     _speech.cancel();
     _tts.stop();
+    // Remove camera controller listener
+    if (_cameraListenerAdded) {
+      final provider = Provider.of<AiCallProvider>(context, listen: false);
+      final controller = provider.cameraService.controller;
+      if (controller != null) {
+        controller.removeListener(_onCameraControllerChanged);
+      }
+      _cameraListenerAdded = false;
+    }
     super.dispose();
   }
 }
