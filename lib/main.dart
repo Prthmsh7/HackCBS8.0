@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'package:firebase_core/firebase_core.dart';
+
 import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
@@ -8,12 +10,14 @@ import 'screens/diet_nutrition_screen.dart';
 import 'screens/community_screen.dart';
 import 'screens/smart_pantry_screen.dart';
 import 'screens/user_profile_screen.dart';
+
 import 'screens/ai_call_screen.dart';
 import 'providers/ai_call_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
   runApp(const MyApp());
 }
 
@@ -24,6 +28,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        Provider<UserDataService>(create: (_) => UserDataService()),
+        ChangeNotifierProvider<ChatProvider>(create: (_) => ChatProvider()..initializeVoice()),
         ChangeNotifierProvider(create: (_) => AiCallProvider()),
       ],
       child: MaterialApp(

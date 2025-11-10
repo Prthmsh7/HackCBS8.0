@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:flutter_tts/flutter_tts.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/neomorphic_container.dart';
 import '../widgets/voice_button.dart';
 import '../widgets/search_bar.dart';
 import '../models/recipe.dart';
 import '../services/user_data_service.dart';
+import '../controllers/voice_controller.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,15 +17,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  final stt.SpeechToText _speech = stt.SpeechToText();
-  final FlutterTts _tts = FlutterTts();
   final TextEditingController _searchController = TextEditingController();
-  bool _isListening = false;
-  String _transcript = '';
-  String _alfredoResponse = '';
-  bool _isProcessing = false;
+  final VoiceController _voiceController = VoiceController();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  String? _lastAlfredoResponse;
 
   final List<Recipe> _featuredRecipes = [
     Recipe(
@@ -90,8 +86,6 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    _initializeSpeech();
-    _initializeTts();
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 400),
       vsync: this,
@@ -103,98 +97,72 @@ class _HomeScreenState extends State<HomeScreen>
     _searchController.addListener(() {
       setState(() {});
     });
+    _initializeVoice();
   }
 
-  Future<void> _initializeSpeech() async {
-    bool available = await _speech.initialize(
-      onStatus: (status) {
-        if (status == 'done' || status == 'notListening') {
-          setState(() {
-            _isListening = false;
-          });
-        }
-      },
-      onError: (error) {
-        setState(() {
-          _isListening = false;
-          _alfredoResponse = 'Sorry, I had trouble understanding. Please try again.';
-        });
-      },
-    );
-    if (!available) {
-      setState(() {
-        _alfredoResponse = 'Speech recognition not available on this device.';
-      });
-    }
-  }
-
-  Future<void> _initializeTts() async {
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.5);
-    await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
-  }
-
-  void _startListening() async {
-    if (!_isListening) {
-      bool available = await _speech.initialize();
-      if (available) {
-        setState(() {
-          _isListening = true;
-          _transcript = '';
-          _alfredoResponse = '';
-        });
-        await _speech.listen(
-          onResult: (result) {
-            setState(() {
-              _transcript = result.recognizedWords;
-            });
-            if (result.finalResult) {
-              _processVoiceCommand(result.recognizedWords);
-            }
-          },
+  Future<void> _initializeVoice() async {
+    try {
+      await _voiceController.initialize();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Voice initialization failed: $e'),
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
-    } else {
-      _stopListening();
     }
   }
 
-  void _stopListening() {
-    _speech.stop();
-    setState(() {
-      _isListening = false;
-    });
+  Future<void> _handleMicPress() async {
+    try {
+      // Toggle conversation on/off
+      await _voiceController.toggleConversation();
+      setState(() {}); // Update UI to reflect new state
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
-  Future<void> _processVoiceCommand(String command) async {
-    setState(() {
-      _isProcessing = true;
-    });
-
-    await Future.delayed(const Duration(seconds: 1));
-    String response = _generateMockResponse(command);
-    setState(() {
-      _alfredoResponse = response;
-      _isProcessing = false;
-    });
-
-    await _tts.speak(response);
-  }
-
-  String _generateMockResponse(String command) {
-    final lowerCommand = command.toLowerCase();
+  String _getVoiceStatusText() {
+    if (!_voiceController.isConversationActive) {
+      return 'Tap to start conversation';
+    }
     
-    if (lowerCommand.contains('hello') || lowerCommand.contains('hi')) {
-      return 'Hello! I\'m Alfredo, your AI nutrition assistant. How can I help you today?';
-    } else if (lowerCommand.contains('recipe') || lowerCommand.contains('cook')) {
-      return 'I\'d be happy to suggest a recipe! What ingredients would you like to use?';
-    } else if (lowerCommand.contains('pantry')) {
-      return 'I can help you manage your pantry. Check the Smart Pantry section for details.';
-    } else if (lowerCommand.contains('nutrition')) {
-      return 'I can help you track your nutrition. Check the Diet & Nutrition section for your daily intake.';
-    } else {
-      return 'I heard: "$command". I\'m here to help with your nutrition needs.';
+    switch (_voiceController.state) {
+      case VoiceState.idle:
+        return 'Conversation active - Tap to stop';
+      case VoiceState.listening:
+        return 'Listening... (Tap to stop)';
+      case VoiceState.processing:
+        return 'Processing...';
+      case VoiceState.speaking:
+        return 'Alfredo is speaking...';
+    }
+  }
+
+  Color _getVoiceStatusColor() {
+    if (!_voiceController.isConversationActive) {
+      return AppTheme.primaryOrange;
+    }
+    
+    switch (_voiceController.state) {
+      case VoiceState.idle:
+        return Colors.green;
+      case VoiceState.listening:
+        return Colors.red;
+      case VoiceState.processing:
+        return Colors.blue;
+      case VoiceState.speaking:
+        return Colors.green;
     }
   }
 
@@ -334,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                         const SizedBox(height: 30),
 
-                        // Voice Interface
+                        // Voice Interface - Direct Voice Conversation
                         TweenAnimationBuilder<double>(
                           tween: Tween(begin: 0.0, end: 1.0),
                           duration: const Duration(milliseconds: 400),
@@ -351,109 +319,52 @@ class _HomeScreenState extends State<HomeScreen>
                             child: Column(
                               children: [
                                 VoiceButton(
-                                  isListening: _isListening,
-                                  onTap: _startListening,
+                                  isListening: _voiceController.isListening,
+                                  onTap: _handleMicPress,
                                   size: 100,
                                 ),
                                 const SizedBox(height: 20),
                                 Text(
-                                  _isListening
-                                      ? 'Listening...'
-                                      : _isProcessing
-                                          ? 'Processing...'
-                                          : 'Tap to talk to Alfredo',
-                                  style: Theme.of(context).textTheme.titleMedium,
+                                  _getVoiceStatusText(),
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        color: _getVoiceStatusColor(),
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 30),
-
-                        // Transcript & Response
-                        if (_transcript.isNotEmpty || _alfredoResponse.isNotEmpty) ...[
-                          if (_transcript.isNotEmpty)
-                            TweenAnimationBuilder<double>(
-                              tween: Tween(begin: 0.0, end: 1.0),
-                              duration: const Duration(milliseconds: 200),
-                              builder: (context, value, child) {
-                                return Transform.translate(
-                                  offset: Offset(-20 * (1 - value), 0),
-                                  child: Opacity(
-                                    opacity: value,
-                                    child: child,
+                                const SizedBox(height: 8),
+                                if (_voiceController.state == VoiceState.idle)
+                                  Text(
+                                    'Voice-powered AI assistant',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          color: AppTheme.gray600,
+                                        ),
                                   ),
-                                );
-                              },
-                              child: NeomorphicContainer(
-                                padding: const EdgeInsets.all(16),
-                                margin: const EdgeInsets.only(bottom: 12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'You said:',
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                            color: AppTheme.gray600,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      _transcript,
-                                      style: Theme.of(context).textTheme.bodyLarge,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          if (_alfredoResponse.isNotEmpty)
-                            TweenAnimationBuilder<double>(
-                              tween: Tween(begin: 0.0, end: 1.0),
-                              duration: const Duration(milliseconds: 200),
-                              builder: (context, value, child) {
-                                return Transform.translate(
-                                  offset: Offset(20 * (1 - value), 0),
-                                  child: Opacity(
-                                    opacity: value,
-                                    child: child,
-                                  ),
-                                );
-                              },
-                              child: NeomorphicContainer(
-                                padding: const EdgeInsets.all(16),
-                                color: AppTheme.accentYellow.withValues(alpha: 0.3),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
+                                // Visual indicator when Alfredo is speaking
+                                if (_voiceController.isSpeaking)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 16),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
                                         Icon(
-                                          Icons.auto_awesome_rounded,
-                                          color: AppTheme.primaryOrange,
+                                          Icons.volume_up_rounded,
+                                          color: Colors.green,
                                           size: 20,
                                         ),
                                         const SizedBox(width: 8),
                                         Text(
-                                          'Alfredo:',
+                                          'Alfredo is speaking...',
                                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                color: AppTheme.primaryOrange,
-                                                fontWeight: FontWeight.w600,
+                                                color: Colors.green,
                                               ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      _alfredoResponse,
-                                      style: Theme.of(context).textTheme.bodyLarge,
-                                    ),
-                                  ],
-                                ),
-                              ),
+                                  ),
+                              ],
                             ),
-                          const SizedBox(height: 30),
-                        ],
+                          ),
+                        ),
 
                         // AI Recipes Section
                         TweenAnimationBuilder<double>(
@@ -736,10 +647,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _voiceController.dispose();
     _animationController.dispose();
     _searchController.dispose();
-    _speech.stop();
-    _tts.stop();
     super.dispose();
   }
 }
