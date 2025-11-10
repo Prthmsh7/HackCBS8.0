@@ -7,9 +7,16 @@ class AppTheme {
   static const Color primaryOrangeLight = Color(0xFFFF8A50);
   static const Color primaryOrangeDark = Color(0xFFE55A10);
   static const Color accentYellow = Color(0xFFF1F3C2);
+  static const Color accentYellowLight = Color(0xFFF9FAD8);
+  static const Color accentYellowDark = Color(0xFFE8EAA0);
   static const Color successGreen = Color(0xFF4CAF50);
+  static const Color successGreenLight = Color(0xFF81C784);
   static const Color warningOrange = Color(0xFFFF9800);
   static const Color errorRed = Color(0xFFE53935);
+  static const Color infoBlue = Color(0xFF2196F3);
+  static const Color infoBlueLight = Color(0xFF64B5F6);
+  static const Color purpleAccent = Color(0xFF9C27B0);
+  static const Color purpleAccentLight = Color(0xFFBA68C8);
   
   // Neutral Colors
   static const Color gray50 = Color(0xFFFAFAFA);
@@ -59,49 +66,49 @@ class AppTheme {
       ),
       textTheme: GoogleFonts.interTextTheme().copyWith(
         displayLarge: GoogleFonts.inter(
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-          color: gray900,
-          letterSpacing: -0.5,
-        ),
-        displayMedium: GoogleFonts.inter(
           fontSize: 28,
           fontWeight: FontWeight.bold,
           color: gray900,
           letterSpacing: -0.5,
         ),
-        displaySmall: GoogleFonts.inter(
+        displayMedium: GoogleFonts.inter(
           fontSize: 24,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.bold,
           color: gray900,
+          letterSpacing: -0.5,
         ),
-        headlineMedium: GoogleFonts.inter(
+        displaySmall: GoogleFonts.inter(
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: gray900,
         ),
-        titleLarge: GoogleFonts.inter(
+        headlineMedium: GoogleFonts.inter(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: gray900,
         ),
-        titleMedium: GoogleFonts.inter(
+        titleLarge: GoogleFonts.inter(
           fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: gray900,
+        ),
+        titleMedium: GoogleFonts.inter(
+          fontSize: 14,
           fontWeight: FontWeight.w500,
           color: gray900,
         ),
         bodyLarge: GoogleFonts.inter(
-          fontSize: 16,
+          fontSize: 14,
           fontWeight: FontWeight.normal,
           color: gray800,
         ),
         bodyMedium: GoogleFonts.inter(
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.normal,
           color: gray700,
         ),
         bodySmall: GoogleFonts.inter(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.normal,
           color: gray600,
         ),
@@ -111,7 +118,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: false,
         titleTextStyle: GoogleFonts.inter(
-          fontSize: 20,
+          fontSize: 18,
           fontWeight: FontWeight.w600,
           color: gray900,
         ),
@@ -165,49 +172,49 @@ class AppTheme {
       ),
       textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme).copyWith(
         displayLarge: GoogleFonts.inter(
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-          letterSpacing: -0.5,
-        ),
-        displayMedium: GoogleFonts.inter(
           fontSize: 28,
           fontWeight: FontWeight.bold,
           color: Colors.white,
           letterSpacing: -0.5,
         ),
-        displaySmall: GoogleFonts.inter(
+        displayMedium: GoogleFonts.inter(
           fontSize: 24,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.bold,
           color: Colors.white,
+          letterSpacing: -0.5,
         ),
-        headlineMedium: GoogleFonts.inter(
+        displaySmall: GoogleFonts.inter(
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
-        titleLarge: GoogleFonts.inter(
+        headlineMedium: GoogleFonts.inter(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
-        titleMedium: GoogleFonts.inter(
+        titleLarge: GoogleFonts.inter(
           fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+        titleMedium: GoogleFonts.inter(
+          fontSize: 14,
           fontWeight: FontWeight.w500,
           color: Colors.white,
         ),
         bodyLarge: GoogleFonts.inter(
-          fontSize: 16,
+          fontSize: 14,
           fontWeight: FontWeight.normal,
           color: Colors.white,
         ),
         bodyMedium: GoogleFonts.inter(
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.normal,
           color: gray300,
         ),
         bodySmall: GoogleFonts.inter(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.normal,
           color: gray400,
         ),
@@ -217,7 +224,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: false,
         titleTextStyle: GoogleFonts.inter(
-          fontSize: 20,
+          fontSize: 18,
           fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
@@ -233,11 +240,11 @@ class AppTheme {
         selectedItemColor: primaryOrange,
         unselectedItemColor: gray400,
         selectedLabelStyle: GoogleFonts.inter(
-          fontSize: 12,
+          fontSize: 10,
           fontWeight: FontWeight.w600,
         ),
         unselectedLabelStyle: GoogleFonts.inter(
-          fontSize: 12,
+          fontSize: 10,
           fontWeight: FontWeight.normal,
         ),
         type: BottomNavigationBarType.fixed,

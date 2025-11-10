@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "64637322909",
+    "project_id": "alfredo-baefb",
+    "storage_bucket": "alfredo-baefb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:64637322909:android:d9a3b1c74b1abc3b1c3674",
+        "android_client_info": {
+          "package_name": "com.alfredo.cook"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCy22bycghzH_oJ2CokA3fw3yDgtpB8KDA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
